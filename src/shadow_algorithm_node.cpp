@@ -1,4 +1,5 @@
 #include <ros/ros.h>
+#include <turtlesim/Spawn.h>
 #include <ilcplex/ilocplex.h>
 #include <chrono>	//for endl
 
@@ -14,14 +15,31 @@ int main(int argc, char **argv) {
 	ros::init(argc, argv, "defaultnode");
 	ros::NodeHandle nh;
 	
-	optimizeme();
+	//spawn two turtles
+	ros::service::waitForService("spawn");
+	ros::ServiceClient spawnTurtle = nh.serviceClient<turtlesim::Spawn>("spawn");
+	
+	turtlesim::Spawn::Request req;
+	turtlesim::Spawn::Response resp;
+	
+	req.name	= "myturtle";
+	req.x 		= 2;
+	req.y		= 2;
+	req.theta	= M_PI/6;
+
+	bool success=spawnTurtle.call(req,resp);
+	if(success) { ROS_INFO_STREAM ("Spawned turtle: "); }
+	else { ROS_INFO_STREAM ("Error, unable to spawn turtle"); }
+	
+	
+	//optimizeme();
 
 
    return 0;
 }	
 
 void optimizeme() {
-		IloEnv   env;					//create environment handle which also creates the implementation object internally
+	IloEnv   env;					//create environment handle which also creates the implementation object internally
 	IloModel model(env);		//create modelling object to define optimisation models with our enviroment env
 	IloNumVarArray var(env);	//create modelling variables
 	IloRangeArray con(env);		//create range objects for defining constraints
