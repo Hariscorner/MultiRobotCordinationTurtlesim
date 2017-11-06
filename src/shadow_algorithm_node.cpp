@@ -4,6 +4,7 @@
 
 using namespace std;
 
+void optimizeme();
 static void populatebyrow     (IloModel model, IloNumVarArray var, IloRangeArray con);
    //usage (const char *progname),
    
@@ -13,8 +14,14 @@ int main(int argc, char **argv) {
 	ros::init(argc, argv, "defaultnode");
 	ros::NodeHandle nh;
 	
-	//optimizeme();
-	IloEnv   env;					//create environment handle which also creates the implementation object internally
+	optimizeme();
+
+
+   return 0;
+}	
+
+void optimizeme() {
+		IloEnv   env;					//create environment handle which also creates the implementation object internally
 	IloModel model(env);		//create modelling object to define optimisation models with our enviroment env
 	IloNumVarArray var(env);	//create modelling variables
 	IloRangeArray con(env);		//create range objects for defining constraints
@@ -48,10 +55,7 @@ int main(int argc, char **argv) {
    	}//end of try catch
 
    env.end();
-
-   return 0;
-}	
-
+}
 static void
 populatebyrow (IloModel model, IloNumVarArray x, IloRangeArray c)
 {
