@@ -57,13 +57,13 @@ int main(int argc, char **argv) {
 	IloRangeArray con(env);		//create range objects for defining constraints
 	
 	ros::Rate my_rate(.01);
-	while(ros::ok() && nh.ok()){
+	//while(ros::ok() && nh.ok()){
 		ros::spinOnce();
 		optimizeme(model,var,con);
 		printf("Processing...\n"); 
 		my_rate.sleep();
-	}
-	
+	//}
+	env.end();
    	return 0;
 }	
 
@@ -140,7 +140,6 @@ void optimizeme(IloModel model, IloNumVarArray var, IloRangeArray con) {
    	catch (...) {
       	cerr << "Unknown exception caught" << endl;
    	}//end of try catch
-	env.end();
 }
 
 void evalcoeffs() {
