@@ -5,12 +5,15 @@
 #include <math.h> 	//for hypot
 #include "turtlesim/Pose.h"		
 #include <limits.h>
+#include "geometry_msgs/Twist.h"
 
 using namespace std;
+geometry_msgs::Twist cmdVel2;
 turtlesim::Pose T1Pose, T2Pose;
 float d=0.5, A12, w12, alpha, l12, r12, theta1, theta2, v1, v2, h1, h2, k1, k2;
 
 void evalcoeffs();
+void spawn_my_turtles(ros::NodeHandle nh);
 void currPoseCallback1(const turtlesim::Pose::ConstPtr& msg);
 void currPoseCallback2(const turtlesim::Pose::ConstPtr& msg);
 void optimizeme(IloModel model, IloNumVarArray var, IloRangeArray con);
@@ -22,33 +25,25 @@ int main(int argc, char **argv) {
 	
 	ros::init(argc, argv, "defaultnode");
 	ros::NodeHandle nh;
+	ros::Rate my_rate(.1);
 	
-	//spawn two turtles
-	ros::service::waitForService("spawn");
-	ros::ServiceClient spawnTurtle = nh.serviceClient<turtlesim::Spawn>("spawn");
-	
-	turtlesim::Spawn::Request req1, req2;
-	turtlesim::Spawn::Response resp1, resp2;
-	
-	req1.name	= "myturtle1";
-	req1.x 		= 4;
-	req1.y		= 2;
-	req1.theta	= M_PI/3;
-	
-	req2.name	= "myturtle2";
-	req2.x 		= 2;
-	req2.y		= 4;
-	req2.theta	= M_PI/6;
-	
-	bool success1=spawnTurtle.call(req1,resp1);
-	bool success2=spawnTurtle.call(req2,resp2);
-	if(success1 && success2) { ROS_INFO_STREAM ("Spawned turtles"); }
-	else { ROS_INFO_STREAM ("Error, unable to spawn turtles"); }
+	spawn_my_turtles(nh);
 	
 	// subscriber to get current pose of turtle
 	ros::Subscriber curr_pose_sub1 = nh.subscribe("/myturtle1/pose", 5, currPoseCallback1);
 	ros::Subscriber curr_pose_sub2 = nh.subscribe("/myturtle2/pose", 5, currPoseCallback2);
-
+	
+	ros::Publisher turtle2_vel_pub = nh.advertise<geometry_msgs::Twist>("myturtle2/cmd_vel", 1000);
+	cmdVel2.linear.x 	= 2;
+	cmdVel2.angular.z 	= 0;
+	int i=1;
+	while(ros::ok() && nh.ok() && i<100) {
+		turtle2_vel_pub.publish(cmdVel2);
+		printf("Publishing...\n"); 
+		my_rate.sleep();
+		++i;
+	}
+	/*
 	evalcoeffs();
 	
 	IloEnv   env;					//create environment handle which also creates the implementation object internally
@@ -56,14 +51,15 @@ int main(int argc, char **argv) {
 	IloNumVarArray var(env);	//create modelling variables
 	IloRangeArray con(env);		//create range objects for defining constraints
 	
-	ros::Rate my_rate(.01);
+	
 	//while(ros::ok() && nh.ok()){
-		ros::spinOnce();
-		optimizeme(model,var,con);
-		printf("Processing...\n"); 
-		my_rate.sleep();
+	ros::spinOnce();		//this will trigger all callbacks  which are waiting for a call at this moment
+	optimizeme(model,var,con);
+	printf("Processing...\n"); 
+	my_rate.sleep();
 	//}
 	env.end();
+	*/
    	return 0;
 }	
 
@@ -112,6 +108,7 @@ static void populatebyrow (IloModel model, IloNumVarArray x, IloRangeArray c)
 	model.add(c);			//adding constraints to the model
 
 }  // END populatebyrow
+
 void optimizeme(IloModel model, IloNumVarArray var, IloRangeArray con) {
 	IloEnv env = model.getEnv();
     try {
@@ -140,6 +137,30 @@ void optimizeme(IloModel model, IloNumVarArray var, IloRangeArray con) {
    	catch (...) {
       	cerr << "Unknown exception caught" << endl;
    	}//end of try catch
+}
+
+void spawn_my_turtles(ros::NodeHandle nh) {
+	//spawn two turtles
+	ros::service::waitForService("spawn");
+	ros::ServiceClient spawnTurtle = nh.serviceClient<turtlesim::Spawn>("spawn");
+	
+	turtlesim::Spawn::Request req1, req2;
+	turtlesim::Spawn::Response resp1, resp2;
+	
+	req1.name	= "myturtle1";
+	req1.x 		= 4;
+	req1.y		= 2;
+	req1.theta	= M_PI/3;
+	
+	req2.name	= "myturtle2";
+	req2.x 		= 2;
+	req2.y		= 4;
+	req2.theta	= M_PI/6;
+	
+	bool success1=spawnTurtle.call(req1,resp1);
+	bool success2=spawnTurtle.call(req2,resp2);
+	if(success1 && success2) { ROS_INFO_STREAM ("Spawned turtles"); }
+	else { ROS_INFO_STREAM ("Error, unable to spawn turtles"); }
 }
 
 void evalcoeffs() {
