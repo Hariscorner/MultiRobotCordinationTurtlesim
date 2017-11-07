@@ -8,9 +8,9 @@
 #include "geometry_msgs/Twist.h"
 
 using namespace std;
-geometry_msgs::Twist cmdVel2;
+geometry_msgs::Twist cmdVel1 ,cmdVel2;
 turtlesim::Pose T1Pose, T2Pose;
-float d=0.5, A12, w12, alpha, l12, r12, theta1, theta2, v1, v2, h1, h2, k1, k2;
+float d=2, A12, w12, alpha, l12, r12, theta1, theta2, v1, v2, h1, h2, k1, k2;
 
 void evalcoeffs();
 void spawn_my_turtles(ros::NodeHandle nh);
@@ -25,31 +25,53 @@ int main(int argc, char **argv) {
 	
 	ros::init(argc, argv, "defaultnode");
 	ros::NodeHandle nh;
-	ros::Rate my_rate(.1);
+	ros::Rate my_rate(1);
 	
-	spawn_my_turtles(nh);
+	spawn_my_turtles(nh);	//spawn both the turtles and initiate their pose and check if the spawnings were successful
 	
-	// subscriber to get current pose of turtle
-	ros::Subscriber curr_pose_sub1 = nh.subscribe("/myturtle1/pose", 5, currPoseCallback1);
+	ros::Subscriber curr_pose_sub1 = nh.subscribe("/myturtle1/pose", 5, currPoseCallback1);	// subscriber objects to get current pose of each turtle
 	ros::Subscriber curr_pose_sub2 = nh.subscribe("/myturtle2/pose", 5, currPoseCallback2);
 	
+	ros::Publisher turtle1_vel_pub = nh.advertise<geometry_msgs::Twist>("myturtle1/cmd_vel", 1000);	//publisher objects to publish the command velocity
 	ros::Publisher turtle2_vel_pub = nh.advertise<geometry_msgs::Twist>("myturtle2/cmd_vel", 1000);
-	cmdVel2.linear.x 	= 2;
-	cmdVel2.angular.z 	= 0;
+	
+	cmdVel1.linear.x 	= 2; 	cmdVel1.angular.z 	= 0;	//initial cmd_vel for turtle
+	cmdVel2.linear.x 	= 2; 	cmdVel2.angular.z 	= 0;
+
+	//FIXME add a small delay here
+	printf("going to Publish now...\n"); 
+	my_rate.sleep();
+	my_rate.sleep();
+	//publish the velocity once
+	turtle1_vel_pub.publish(cmdVel1);	
+	turtle2_vel_pub.publish(cmdVel2);
+	
 	int i=1;
-	while(ros::ok() && nh.ok() && i<100) {
+	while(ros::ok() && nh.ok() && i<20) {
+		
+		ros::spinOnce();	//this will trigger the subscriber callbacks which will fetch the turtles' current pose and vel requried for next line
+
+		IloEnv   env;				//create environment handle which also creates the implementation object internally
+		IloModel model(env);		//create modelling object to define optimisation models with our enviroment env
+		IloNumVarArray var(env);	//create modelling variables
+		IloRangeArray con(env);		//create range objects for defining constraints
+		
+		evalcoeffs();				//calculates the coefficients of the constraint eqns etc
+		optimizeme(model,var,con);	//the real optimisation happens here
+
+		//cmdVel1.linear.x=
+		//cmdVel2.linear.x=			
+		turtle1_vel_pub.publish(cmdVel1);	
 		turtle2_vel_pub.publish(cmdVel2);
-		printf("Publishing...\n"); 
+		
 		my_rate.sleep();
 		++i;
+		env.end();
 	}
 	/*
 	evalcoeffs();
 	
-	IloEnv   env;					//create environment handle which also creates the implementation object internally
-	IloModel model(env);		//create modelling object to define optimisation models with our enviroment env
-	IloNumVarArray var(env);	//create modelling variables
-	IloRangeArray con(env);		//create range objects for defining constraints
+
 	
 	
 	//while(ros::ok() && nh.ok()){
@@ -67,8 +89,8 @@ static void populatebyrow (IloModel model, IloNumVarArray x, IloRangeArray c)
 {
 	IloEnv env = model.getEnv();		//environment handle
 
-	x.add(IloNumVar(env, 0.0, 5.0, ILOFLOAT));	//define upper and lower bounds for variables and the variable type (continous(float) or discrete (int/bool)
-	x.add(IloNumVar(env, 0.0, 5.0, ILOFLOAT));
+	x.add(IloNumVar(env, 0.0, 2.0, ILOFLOAT));	//define upper and lower bounds for variables and the variable type (continous(float) or discrete (int/bool)
+	x.add(IloNumVar(env, 0.0, 2.0, ILOFLOAT));
 	x.add(IloNumVar(env, 0, 1, ILOBOOL));		//boolean variables for MILP
 	x.add(IloNumVar(env, 0, 1, ILOBOOL));
 	x.add(IloNumVar(env, 0, 1, ILOBOOL));
@@ -129,6 +151,9 @@ void optimizeme(IloModel model, IloNumVarArray var, IloRangeArray con) {
 		
 		cplex.getValues(vals, var);		//solution values for all variables will be stored to vals
 		env.out() << "Values        = " << vals << endl;
+		
+		cmdVel1.linear.x=vals[0];
+		cmdVel2.linear.x=vals[1];
 		
 	}
    	catch (IloException& e) {
