@@ -1,9 +1,9 @@
 <launch>
 	<param name="nTurtle" value="3" />
 	<node pkg="turtlesim" type="turtlesim_node" name="simulator" > </node>
-	<node pkg="turtlesim" type="turtle_teleop_key" name="keyboard_control" launch-prefix="xterm -e" >
+	<!--<node pkg="turtlesim" type="turtle_teleop_key" name="keyboard_control" launch-prefix="xterm -e" >
 		<remap from="turtle1/cmd_vel" to="myturtle1/cmd_vel" />
-	</node>
-	<node pkg="shadow_algorithm" type="shadow_algorithm_node" name="ourturtlenode" launch-prefix="xterm -e"> </node>
+	</node> -->
+	<node pkg="shadow_algorithm" type="shadow_algorithm_node" name="ourturtlenode" output="screen" launch-prefix="xterm -e"> </node>
 	<node pkg="shadow_algorithm" type="kill_turtle_node" name="myshadowkiller" />
 </launch>

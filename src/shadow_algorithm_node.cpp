@@ -4,6 +4,7 @@
 #include <chrono>	//for endl
 #include <math.h> 	//for hypot
 #include "turtlesim/Pose.h"		
+#include <limits.h>
 
 using namespace std;
 turtlesim::Pose T1Pose, T2Pose;
@@ -46,7 +47,7 @@ int main(int argc, char **argv) {
 	
 	// subscriber to get current pose of turtle
 	ros::Subscriber curr_pose_sub1 = nh.subscribe("/myturtle1/pose", 5, currPoseCallback1);
-	ros::Subscriber curr_pose_sub2 = nh.subscribe("/myturtle1/pose", 5, currPoseCallback2);
+	ros::Subscriber curr_pose_sub2 = nh.subscribe("/myturtle2/pose", 5, currPoseCallback2);
 
 	evalcoeffs();
 	
@@ -55,32 +56,60 @@ int main(int argc, char **argv) {
 	IloNumVarArray var(env);	//create modelling variables
 	IloRangeArray con(env);		//create range objects for defining constraints
 	
-	optimizeme(model,var,con);
-
-
-   return 0;
+	ros::Rate my_rate(.01);
+	while(ros::ok() && nh.ok()){
+		ros::spinOnce();
+		optimizeme(model,var,con);
+		printf("Processing...\n"); 
+		my_rate.sleep();
+	}
+	
+   	return 0;
 }	
 
 static void populatebyrow (IloModel model, IloNumVarArray x, IloRangeArray c)
 {
-   IloEnv env = model.getEnv();		//environment handle
+	IloEnv env = model.getEnv();		//environment handle
 
-   x.add(IloNumVar(env, 0.0, 40.0, ILOFLOAT));	//define upper and lower bounds for variables and the variable type (continous(float) or discrete (int/bool)
-   x.add(IloNumVar(env, 0.0, 10.0, ILOINT));
-   x.add(IloNumVar(env, 15.0, 23.0, ILOFLOAT));
+	x.add(IloNumVar(env, 0.0, 5.0, ILOFLOAT));	//define upper and lower bounds for variables and the variable type (continous(float) or discrete (int/bool)
+	x.add(IloNumVar(env, 0.0, 5.0, ILOFLOAT));
+	x.add(IloNumVar(env, 0, 1, ILOBOOL));		//boolean variables for MILP
+	x.add(IloNumVar(env, 0, 1, ILOBOOL));
+	x.add(IloNumVar(env, 0, 1, ILOBOOL));
+	x.add(IloNumVar(env, 0, 1, ILOBOOL));
 
-   model.add(IloMaximize(env, x[0] + 2 * x[1] + 3 * x[2]));		//objective function for maximisation (Note: done in single step instead of two) 
+	x[0].setName("q1");		//renaming the variables
+	x[1].setName("q2");
+	x[2].setName("f1");
+	x[2].setName("f2");
+	x[2].setName("f3");
+	x[2].setName("f4");
+	
+	
+	model.add(IloMinimize(env, - x[0] - x[1]));		//objective function for minimisation (Note: done in single step instead of two) 
 
-   c.add( - x[0] +     x[1] + x[2] <= 20);				//defining constraints
-   c.add(   x[0] - 3 * x[1] + x[2] <= 30);
+	c.add( -cos(theta1)*x[0] 	+ cos(theta2)*x[1] 	- x[2]*INT_MAX <= v1*cos(theta1) 	- v2*cos(theta2));				//defining constraints
+	c.add( h1*x[0] 				- h2*x[1] 		 	- x[2]*INT_MAX <= -v1*h1			+ v2*h2);
+	c.add( cos(theta1)*x[0] 	- cos(theta2)*x[1] 	- x[3]*INT_MAX <= -v1*cos(theta1) 	+ v2*cos(theta2));
+	c.add( -h1*x[0] 			- h2*x[1] 		 	- x[3]*INT_MAX <= v1*h1 			- v2*h2);
 
-   x[0].setName("x1");		//renaming the variables
-   x[1].setName("x2");
-   x[2].setName("x3");
+	c.add( -cos(theta1)*x[0] 	+ cos(theta2)*x[1] 	- x[4]*INT_MAX <= v1*cos(theta1) 	- v2*cos(theta2));				//defining constraints
+	c.add( -k1*x[0] 			- k2*x[1] 		 	- x[4]*INT_MAX <= v1*k1				- v2*k2);
+	c.add( cos(theta1)*x[0] 	- cos(theta2)*x[1] 	- x[5]*INT_MAX <= -v1*cos(theta1) 	+ v2*cos(theta2));
+	c.add( k1*x[0] 				- k2*x[1] 		 	- x[5]*INT_MAX <= -v1*k1 			+ v2*k2);
 
-   c[0].setName("c1");		//renaming the constraints
-   c[1].setName("c2");
-   model.add(c);			//adding constraints to the model
+	c.add( x[2] + x[3] + x[4] + x[5]							   <= 3);
+
+	c[0].setName("c1");		//renaming the constraints
+	c[1].setName("c2");
+	c[2].setName("c3");
+	c[3].setName("c4");
+	c[4].setName("c5");
+	c[5].setName("c6");
+	c[6].setName("c7");
+	c[7].setName("c8");
+	c[8].setName("c9");
+	model.add(c);			//adding constraints to the model
 
 }  // END populatebyrow
 void optimizeme(IloModel model, IloNumVarArray var, IloRangeArray con) {
@@ -111,8 +140,7 @@ void optimizeme(IloModel model, IloNumVarArray var, IloRangeArray con) {
    	catch (...) {
       	cerr << "Unknown exception caught" << endl;
    	}//end of try catch
-
-   env.end();
+	env.end();
 }
 
 void evalcoeffs() {
