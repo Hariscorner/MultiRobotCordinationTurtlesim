@@ -1,4 +1,5 @@
 #include <ros/ros.h>
+#include <iostream>
 #include <turtlesim/Spawn.h>
 #include <ilcplex/ilocplex.h>
 #include <chrono>	//for endl
@@ -9,10 +10,13 @@
 
 using namespace std;
 geometry_msgs::Twist cmdVel1 ,cmdVel2;
+turtlesim::Spawn::Request req1, req2;
+turtlesim::Spawn::Response resp1, resp2;
 turtlesim::Pose T1Pose, T2Pose;
-float d=2, A12, w12, alpha, l12, r12, theta1, theta2, v1, v2, h1, h2, k1, k2;
+double safe_dia, A12, w12, alpha, l12, r12, theta1, theta2, v1, v2, h1, h2, k1, k2;
 
 void evalcoeffs();
+double constrainAngle(double x);
 void spawn_my_turtles(ros::NodeHandle nh);
 void currPoseCallback1(const turtlesim::Pose::ConstPtr& msg);
 void currPoseCallback2(const turtlesim::Pose::ConstPtr& msg);
@@ -26,28 +30,28 @@ int main(int argc, char **argv) {
 	ros::init(argc, argv, "defaultnode");
 	ros::NodeHandle nh;
 	ros::Rate my_rate(1);
+	ros::param::get("safedia",	safe_dia);
 	
 	spawn_my_turtles(nh);	//spawn both the turtles and initiate their pose and check if the spawnings were successful
 	
-	ros::Subscriber curr_pose_sub1 = nh.subscribe("/myturtle1/pose", 5, currPoseCallback1);	// subscriber objects to get current pose of each turtle
-	ros::Subscriber curr_pose_sub2 = nh.subscribe("/myturtle2/pose", 5, currPoseCallback2);
+	ros::Subscriber curr_pose_sub1 = nh.subscribe("/"+req1.name+"/pose", 5, currPoseCallback1);	// subscriber objects to get current pose of each turtle
+	ros::Subscriber curr_pose_sub2 = nh.subscribe("/"+req2.name+"/pose", 5, currPoseCallback2);
 	
-	ros::Publisher turtle1_vel_pub = nh.advertise<geometry_msgs::Twist>("myturtle1/cmd_vel", 1000);	//publisher objects to publish the command velocity
-	ros::Publisher turtle2_vel_pub = nh.advertise<geometry_msgs::Twist>("myturtle2/cmd_vel", 1000);
+	ros::Publisher turtle1_vel_pub = nh.advertise<geometry_msgs::Twist>("/"+req1.name+"/cmd_vel", 1000);	//publisher objects to publish the command velocity
+	ros::Publisher turtle2_vel_pub = nh.advertise<geometry_msgs::Twist>("/"+req2.name+"/cmd_vel", 1000);
 	
 	cmdVel1.linear.x 	= 2; 	cmdVel1.angular.z 	= 0;	//initial cmd_vel for turtle
 	cmdVel2.linear.x 	= 2; 	cmdVel2.angular.z 	= 0;
 
-	//FIXME add a small delay here
 	printf("going to Publish now...\n"); 
 	my_rate.sleep();
 	my_rate.sleep();
 	//publish the velocity once
 	turtle1_vel_pub.publish(cmdVel1);	
 	turtle2_vel_pub.publish(cmdVel2);
-	
+
 	int i=1;
-	while(ros::ok() && nh.ok() && i<20) {
+	while(ros::ok() && nh.ok() && i<8) {
 		
 		ros::spinOnce();	//this will trigger the subscriber callbacks which will fetch the turtles' current pose and vel requried for next line
 
@@ -58,9 +62,7 @@ int main(int argc, char **argv) {
 		
 		evalcoeffs();				//calculates the coefficients of the constraint eqns etc
 		optimizeme(model,var,con);	//the real optimisation happens here
-
-		//cmdVel1.linear.x=
-		//cmdVel2.linear.x=			
+		
 		turtle1_vel_pub.publish(cmdVel1);	
 		turtle2_vel_pub.publish(cmdVel2);
 		
@@ -68,20 +70,7 @@ int main(int argc, char **argv) {
 		++i;
 		env.end();
 	}
-	/*
-	evalcoeffs();
-	
 
-	
-	
-	//while(ros::ok() && nh.ok()){
-	ros::spinOnce();		//this will trigger all callbacks  which are waiting for a call at this moment
-	optimizeme(model,var,con);
-	printf("Processing...\n"); 
-	my_rate.sleep();
-	//}
-	env.end();
-	*/
    	return 0;
 }	
 
@@ -136,8 +125,9 @@ void optimizeme(IloModel model, IloNumVarArray var, IloRangeArray con) {
     try {
 		populatebyrow (model, var, con);	//populate the model
 		
-      	IloCplex cplex(model);			//create cplex object for solving the problem (Note: two steps combined)
-      	cplex.exportModel("lpex1.lp");	//write the extracted model to lplex1.lp file (optional)
+      	IloCplex cplex(model);				//create cplex object for solving the problem (Note: two steps combined)
+      	cplex.exportModel("lpex1.lp");		//write the extracted model to lplex1.lp file (optional)
+		cplex.setOut(env.getNullStream()); 	//discard the output from next step(solving) by dumping it to null stream rather than to the screen
 		
 		// Optimize the problem and obtain solution.
 		if ( !cplex.solve() ) { //this returns an ILOBOOL value (true/false) depending on whether it obtained a feasible soln or not
@@ -168,19 +158,19 @@ void spawn_my_turtles(ros::NodeHandle nh) {
 	//spawn two turtles
 	ros::service::waitForService("spawn");
 	ros::ServiceClient spawnTurtle = nh.serviceClient<turtlesim::Spawn>("spawn");
-	
-	turtlesim::Spawn::Request req1, req2;
-	turtlesim::Spawn::Response resp1, resp2;
-	
-	req1.name	= "myturtle1";
-	req1.x 		= 4;
-	req1.y		= 2;
-	req1.theta	= M_PI/3;
-	
-	req2.name	= "myturtle2";
-	req2.x 		= 2;
-	req2.y		= 4;
-	req2.theta	= M_PI/6;
+
+	//req1.name	= "myturtle1";
+	ros::param::get("~T1Name",		req1.name);
+	ros::param::get("~T1X",		req1.x);
+	ros::param::get("~T1Y",		req1.y);
+	ros::param::get("~T1Theta",	req1.theta);
+	req1.theta=req1.theta * M_PI/180;
+
+	ros::param::get("~T2Name",		req2.name);
+	ros::param::get("~T2X",		req2.x);
+	ros::param::get("~T2Y",		req2.y);
+	ros::param::get("~T2Theta",	req2.theta);
+	req2.theta=req2.theta * M_PI/180;
 	
 	bool success1=spawnTurtle.call(req1,resp1);
 	bool success2=spawnTurtle.call(req2,resp2);
@@ -191,7 +181,7 @@ void spawn_my_turtles(ros::NodeHandle nh) {
 void evalcoeffs() {
 	A12=hypot(T2Pose.x-T1Pose.x,T2Pose.y-T1Pose.y);
 	w12=atan2(T2Pose.y-T1Pose.y,T2Pose.x-T1Pose.x);
-	alpha=asin(d/A12);
+	alpha=asin(safe_dia/A12);
 	l12=w12+alpha;
 	r12=w12-alpha;
 	
@@ -207,17 +197,21 @@ void evalcoeffs() {
 }
 void currPoseCallback1(const turtlesim::Pose::ConstPtr& msg)
 {
-	ROS_INFO("Received T1 pose");
 	T1Pose.x 		= msg->x;
 	T1Pose.y 		= msg->y;
-	T1Pose.theta 	= msg->theta;
+	T1Pose.theta 	= constrainAngle(msg->theta);
 	return;
 }
 void currPoseCallback2(const turtlesim::Pose::ConstPtr& msg)
 {
-	ROS_INFO("Received T2 pose");
 	T2Pose.x 		= msg->x;
 	T2Pose.y 		= msg->y;
-	T2Pose.theta 	= msg->theta;
+	T2Pose.theta 	= constrainAngle(msg->theta);
 	return;
+}
+double constrainAngle(double x){
+    x = fmod(x+M_PI,2*M_PI);
+    if (x < 0)
+        x += 2*M_PI;
+    return x - M_PI;
 }
