@@ -13,7 +13,7 @@ geometry_msgs::Twist cmdVel1 ,cmdVel2;
 turtlesim::Spawn::Request req1, req2;
 turtlesim::Spawn::Response resp1, resp2;
 turtlesim::Pose T1Pose, T2Pose;
-double safe_dia, A12, w12, alpha, l12, r12, theta1, theta2, v1, v2, h1, h2, k1, k2, max_vel1, max_vel2, min_vel1=0, min_vel2=0 ;
+double safe_dia, A12, w12, alpha, l12, r12, theta1, theta2, v1, v2, h1, h2, k1, k2;
 
 void evalcoeffs();
 double constrainAngle(double x);
@@ -43,19 +43,12 @@ int main(int argc, char **argv) {
 	ros::Publisher turtle1_vel_pub = nh.advertise<geometry_msgs::Twist>("/"+req1.name+"/cmd_vel", 2);	//publisher objects to publish the command velocity
 	ros::Publisher turtle2_vel_pub = nh.advertise<geometry_msgs::Twist>("/"+req2.name+"/cmd_vel", 2);
 
-	ros::param::get("maxvel1",	max_vel1);
-	ros::param::get("maxvel2",	max_vel2);
-	
-	cmdVel1.linear.x=max_vel1;
-	cmdVel2.linear.x=max_vel2;
 	printf("going to Publish now...\n"); 
-	turtle1_vel_pub.publish(cmdVel1);	
-	turtle2_vel_pub.publish(cmdVel2); 
 	my_rate.sleep();
 	my_rate.sleep();
 
 	int i=1;
-	//while(ros::ok() && nh.ok() && i<100) {
+	while(ros::ok() && nh.ok() && i<100) {
 		
 		ros::spinOnce();	//this will trigger the subscriber callbacks which will fetch the turtles' current pose and vel requried for next line
 		cout<<"spinning complete "<<endl;
@@ -68,30 +61,27 @@ int main(int argc, char **argv) {
 		evalcoeffs();				//calculates the coefficients of the constraint eqns etc
 		optimizeme(model,var,con);	//the real optimisation happens here
 	
-	while(ros::ok() && nh.ok() && i<100) {
-		A12=hypot(T2Pose.x-T1Pose.x,T2Pose.y-T1Pose.y);
-		cout << endl<< "A12 :" << A12  << "\t Safe_dia: " << safe_dia << "\t Difference: " << A12 - safe_dia << endl;
-		
 		turtle1_vel_pub.publish(cmdVel1);	
 		turtle2_vel_pub.publish(cmdVel2);
 		
 		my_rate.sleep();
 		++i;
-		ros::spinOnce();
-	}
 		env.end();
-	//}
+	}
 
    	return 0;
 }	
 
 static void populatebyrow (IloModel model, IloNumVarArray x, IloRangeArray c)
 {
+	float max_vel1, max_vel2;
+	ros::param::get("maxvel1",	max_vel1);
+	ros::param::get("maxvel2",	max_vel2);
 	
 	IloEnv env = model.getEnv();		//environment handle
 
-	x.add(IloNumVar(env, min_vel1-v1, max_vel1-v1, ILOFLOAT));	//define upper and lower bounds for variables and the variable type (continous(float) or discrete (int/bool)
-	x.add(IloNumVar(env, min_vel2-v1, max_vel2-v2, ILOFLOAT));
+	x.add(IloNumVar(env, 0.0, max_vel1, ILOFLOAT));	//define upper and lower bounds for variables and the variable type (continous(float) or discrete (int/bool)
+	x.add(IloNumVar(env, 0.0, max_vel2, ILOFLOAT));
 	x.add(IloNumVar(env, 0, 1, ILOBOOL));		//boolean variables for MILP
 	x.add(IloNumVar(env, 0, 1, ILOBOOL));
 	x.add(IloNumVar(env, 0, 1, ILOBOOL));
@@ -100,20 +90,20 @@ static void populatebyrow (IloModel model, IloNumVarArray x, IloRangeArray c)
 	x[0].setName("q1");		//renaming the variables
 	x[1].setName("q2");
 	x[2].setName("f1");
-	x[3].setName("f2");
-	x[4].setName("f3");
-	x[5].setName("f4");
+	x[2].setName("f2");
+	x[2].setName("f3");
+	x[2].setName("f4");
 	
 	
 	model.add(IloMinimize(env, - x[0] - x[1]));		//objective function for minimisation (Note: done in single step instead of two) 
 
-	c.add( -cos(theta1)*x[0] 	+ cos(theta2)*x[1] 	- x[2]*INT_MAX <=  v1*cos(theta1) 	- v2*cos(theta2));				//defining constraints
+	c.add( -cos(theta1)*x[0] 	+ cos(theta2)*x[1] 	- x[2]*INT_MAX <= v1*cos(theta1) 	- v2*cos(theta2));				//defining constraints
 	c.add( h1*x[0] 				- h2*x[1] 		 	- x[2]*INT_MAX <= -v1*h1			+ v2*h2);
 	c.add( cos(theta1)*x[0] 	- cos(theta2)*x[1] 	- x[3]*INT_MAX <= -v1*cos(theta1) 	+ v2*cos(theta2));
-	c.add( -h1*x[0] 			+ h2*x[1] 		 	- x[3]*INT_MAX <=  v1*h1 			- v2*h2);
+	c.add( -h1*x[0] 			+ h2*x[1] 		 	- x[3]*INT_MAX <= v1*h1 			- v2*h2);
 
-	c.add( -cos(theta1)*x[0] 	+ cos(theta2)*x[1] 	- x[4]*INT_MAX <=  v1*cos(theta1) 	- v2*cos(theta2));				//defining constraints
-	c.add( -k1*x[0] 			+ k2*x[1] 		 	- x[4]*INT_MAX <=  v1*k1			- v2*k2);
+	c.add( -cos(theta1)*x[0] 	+ cos(theta2)*x[1] 	- x[4]*INT_MAX <= v1*cos(theta1) 	- v2*cos(theta2));				//defining constraints
+	c.add( -k1*x[0] 			+ k2*x[1] 		 	- x[4]*INT_MAX <= v1*k1				- v2*k2);
 	c.add( cos(theta1)*x[0] 	- cos(theta2)*x[1] 	- x[5]*INT_MAX <= -v1*cos(theta1) 	+ v2*cos(theta2));
 	c.add( k1*x[0] 				- k2*x[1] 		 	- x[5]*INT_MAX <= -v1*k1 			+ v2*k2);
 
@@ -154,8 +144,8 @@ void optimizeme(IloModel model, IloNumVarArray var, IloRangeArray con) {
 		cplex.getValues(vals, var);		//solution values for all variables will be stored to vals
 		env.out() << "Values        = " << vals << endl;
 		
-		cmdVel1.linear.x=v1+vals[0];
-		cmdVel2.linear.x=v2+vals[1];
+		cmdVel1.linear.x=vals[0];
+		cmdVel2.linear.x=vals[1];
 		
 	}
    	catch (IloException& e) {
@@ -225,7 +215,7 @@ void currPoseCallback1(const turtlesim::Pose::ConstPtr& msg)
 	T1Pose.x 		= msg->x;
 	T1Pose.y 		= msg->y;
 	T1Pose.theta 	= constrainAngle(msg->theta);
-	//cout << "set Pose T1" <<endl;
+	cout << "set Pose T1" <<endl;
 	return;
 }
 void currPoseCallback2(const turtlesim::Pose::ConstPtr& msg)
@@ -233,7 +223,7 @@ void currPoseCallback2(const turtlesim::Pose::ConstPtr& msg)
 	T2Pose.x 		= msg->x;
 	T2Pose.y 		= msg->y;
 	T2Pose.theta 	= constrainAngle(msg->theta);
-	//cout << "set Pose T2" <<endl;
+	cout << "set Pose T2" <<endl;
 	return;
 }
 double constrainAngle(double x){

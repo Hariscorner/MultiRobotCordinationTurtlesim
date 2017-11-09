@@ -1,8 +1,11 @@
 <launch>
-	<param name="safedia" value="1" />
+	<param name="safedia" value="2" />
+	<param name="pubrate" value="4" />
+	<param name="maxvel1" value="4" />
+	<param name="maxvel2" value="4" />
 	<node pkg="turtlesim" type="turtlesim_node" name="simulator" > </node>
-	<node pkg="shadow_algorithm" type="shadow_algorithm_node" name="ourturtlenode" output="screen" launch-prefix="xterm -e"> 
-		<rosparam command="load" file="/home/hari/my_iliad/src/shadow_algorithm/src/paramsQ1.yaml" />
+	<node pkg="shadow_algorithm" type="shadow_algorithm_node" name="ourturtlenode" output="screen" launch-prefix="xterm -bg Teal -geometry 90x80+2000+10 -e"> 
+		<rosparam command="load" file="/home/hari/my_iliad/src/shadow_algorithm/params/paramsQ1.yaml" />
 	</node>
 	<node pkg="shadow_algorithm" type="kill_turtle_node" name="myshadowkiller" />
 </launch>
