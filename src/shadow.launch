@@ -1,7 +1,7 @@
 <launch>
 	<param name="safedia" value="1.7" />
 	<param name="pubrate" value="4" />
-	<param name="nTurtle" value="4" />
+	<param name="nTurtle" value="3" />
 	<param name="maxvel" value="4" />
 <!--	<node pkg="shadow_algorithm" type="yaml_creator" name="my_yaml_creator" > </node>	-->
 	<node pkg="turtlesim" type="turtlesim_node" name="simulator" > </node>

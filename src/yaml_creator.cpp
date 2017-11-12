@@ -3,7 +3,7 @@
 using namespace std;
 
 int main () {
-	ros::param::get("nTurtle",	nTurtle);
+	//ros::param::get("nTurtle",	nTurtle);
 	
   ofstream myfile;
   myfile.open ("/home/hari/my_iliad/src/shadow_algorithm/params/params8.yaml");
