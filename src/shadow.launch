@@ -1,8 +1,7 @@
 <launch>
-	<param name="safedia" value="1" />
+	<param name="safedia" value="1.5" />
 	<param name="pubrate" value="4" />
-	<param name="nTurtle" value="3" />
-	<param name="maxvel" value="4" />
+	<param name="maxvel" value="6" />
 <!--	<node pkg="shadow_algorithm" type="yaml_creator" name="my_yaml_creator" > </node>	-->
 	<node pkg="turtlesim" type="turtlesim_node" name="simulator" > </node>
 	<node pkg="shadow_algorithm" type="shadow_algorithm_node" name="ourturtlenode" output="screen" launch-prefix="xterm -bg Teal -geometry 120x80+2000+10 -e"> 
