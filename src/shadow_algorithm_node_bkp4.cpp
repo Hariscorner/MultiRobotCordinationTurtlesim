@@ -1,4 +1,4 @@
-//code which works for n turtles, but they are pairing up and behaving strangely
+//code working for n turtles, but issue of singularity popping up
 #include <ros/ros.h>
 #include <iostream>
 #include <turtlesim/Spawn.h>
@@ -11,9 +11,7 @@
 #include <boost/assign/list_of.hpp>
 
 using namespace std;
-#define NTURTLE 3
-
-//double A12, w12, alpha, l12, r12, theta1, theta2, h1, h2, k1, k2, min_vel1=0, min_vel2=0 ;
+#define NTURTLE 5
 
 double constrainAngle(double x);
 void evalcoeffs(double h[NTURTLE][NTURTLE], double k[NTURTLE][NTURTLE],  turtlesim::Pose TPose[]);
@@ -45,9 +43,6 @@ int main(int argc, char **argv) {
 	spawn_my_turtles(nh, req, resp);	//spawn both the turtles and initiate their pose and check if the spawnings were successful
 	
 	for (int m=0; m<NTURTLE; ++m) {
-		//ros::Subscriber curr_pose_sub = nh.subscribe<turtlesim::Pose>("/"+req[m].name+"/pose", 2, boost::bind(currPoseCallback, _1,m, TPose));	// subscriber objects to get current pose of each turtle
-		//ros::Publisher turtle_vel_pub = nh.advertise<geometry_msgs::Twist>("/"+req[m].name+"/cmd_vel", 2);	//publisher objects to publish the command velocity
-		
 		curr_pose_sub[m] 	= nh.subscribe<turtlesim::Pose>("/"+req[m].name+"/pose", 2, boost::bind(currPoseCallback, _1,m, TPose));	// subscriber objects to get current pose of each turtle
 		turtle_vel_pub[m] 	= nh.advertise<geometry_msgs::Twist>("/"+req[m].name+"/cmd_vel", 2);	//publisher objects to publish the command velocity
 		Vinit[m]		= max_vel;	//set the initial velocity of the robots to max
@@ -68,22 +63,17 @@ int main(int argc, char **argv) {
 	optimizeme(model,var,con, cmdVel, Vinit);	//the real optimisation happens here
 	
 	//cout<<"going to Publish now: \t"<<cmdVel.linear.x<<endl; 
-	int i=1;
-	while(ros::ok() && nh.ok() && i<8){
+	//int i=1;
+	//&& i<8
+	while(ros::ok() && nh.ok() ){
 		for (int a=0; a<NTURTLE; ++a) {
 			turtle_vel_pub[a].publish(cmdVel[a]);
 		}
 		my_rate.sleep();
 		ros::spinOnce();
 		my_rate.sleep();
-		++i;
+		//++i;
 	}
-//	cout<<"TPose[0].x" << TPose[0].x<<endl;
-//	cout<<"TPose[0].y" << TPose[0].y<<endl;
-//	cout<<"TPose[0].theta" << TPose[0].theta<<endl;
-//	cout<<"TPose[1].x" << TPose[1].x<<endl;
-//	cout<<"TPose[1].y" << TPose[1].y<<endl;
-//	cout<<"TPose[1].theta" << TPose[1].theta<<endl;
 	cout<<"done!"<<endl;
 	sleep(1000);
    	return 0;
@@ -93,20 +83,14 @@ int main(int argc, char **argv) {
 static void populatebyrow (IloModel model, IloNumVarArray x, IloRangeArray c, turtlesim::Pose TPose[], double h[NTURTLE][NTURTLE], double k[NTURTLE][NTURTLE], double max_vel, double min_vel, double Vinit[])
 {
 	IloEnv env = model.getEnv();		//environment handle
+	
 	for(int m=0; m<NTURTLE; ++m) {
 		//define upper and lower bounds for variables and the variable type (continous(float) or discrete (int/bool)
 		x.add(IloNumVar(env, min_vel-Vinit[m], max_vel-Vinit[m], ILOFLOAT));	//qi
 	}
 	
-	//evaluate how many boolean variables need to be created depending on the no:of turtles
-	int nBoolean = 4*NTURTLE*(NTURTLE-1)/2;
-	for(int n=0; n < nBoolean; ++n) {
-		x.add(IloNumVar(env, 0, 1, ILOBOOL));		//boolean variables for MILP
-	}
+	model.add(IloMinimize(env, - x[0] - x[1] - x[2] - x[3] - x[4]));		//objective function for minimisation (Note: done in single step instead of two) 
 	
-	model.add(IloMinimize(env, - x[0] - x[1] - x[2]));		//objective function for minimisation (Note: done in single step instead of two) 
-	
-	int lc=0, index;
 	double theta1, theta2, h1, h2, k1, k2, v1, v2;
 	for(int i=0; i<NTURTLE; ++i) {
 		for(int j=0; j<NTURTLE; ++j) {
@@ -119,24 +103,25 @@ static void populatebyrow (IloModel model, IloNumVarArray x, IloRangeArray c, tu
 				k2=k[j][i];
 				v1=Vinit[i];
 				v2=Vinit[j];
-				index=NTURTLE+4*lc;
-				c.add( -cos(theta1)*x[i] 	+ cos(theta2)*x[j] 	- x[index]*INT_MAX	<=  v1*cos(theta1) 	- v2*cos(theta2));				//defining constraints
-				c.add( h1*x[i] 				- h2*x[j] 	- x[index]*INT_MAX 	<= -v1*h1		+ v2*h2);
-				c.add( cos(theta1)*x[i] 	- cos(theta2)*x[j] 	- x[index+1]*INT_MAX 	<= -v1*cos(theta1) 	+ v2*cos(theta2));
-				c.add( -h1*x[i] 			+ h2*x[j] 	- x[index+1]*INT_MAX 	<=  v1*h1 		- v2*h2);
-
-				c.add( -cos(theta1)*x[i] 	+ cos(theta2)*x[j] 	- x[index+2]*INT_MAX 	<=  v1*cos(theta1) 	- v2*cos(theta2));				//defining constraints
-				c.add( -k1*x[i] 			+ k2*x[j] 	- x[index+2]*INT_MAX 	<=  v1*k1		- v2*k2);
-				c.add( cos(theta1)*x[i] 	- cos(theta2)*x[j] 	- x[index+3]*INT_MAX 	<= -v1*cos(theta1) 	+ v2*cos(theta2));
-				c.add( k1*x[i] 				- k2*x[j] 	- x[index+3]*INT_MAX 	<= -v1*k1 		+ v2*k2);
-
-				c.add( x[index] + x[index+1] + x[index+2] + x[index+3]							   <= 3);
-				++lc;
+				IloRange R1(-cos(theta1)*x[i] 	+ cos(theta2)*x[j] 	<=  v1*cos(theta1) 	- v2*cos(theta2));
+				IloRange R2(h1*x[i] 			- h2*x[j] 	<= -v1*h1		+ v2*h2);
+				IloRange R3(cos(theta1)*x[i] 	- cos(theta2)*x[j] 	<= -v1*cos(theta1) 	+ v2*cos(theta2));
+				IloRange R4(-h1*x[i] 			+ h2*x[j] 	<=  v1*h1 		- v2*h2);
+				IloRange R5(-cos(theta1)*x[i] 	+ cos(theta2)*x[j] 	<=  v1*cos(theta1) 	- v2*cos(theta2));
+				IloRange R6(-k1*x[i] 			+ k2*x[j] 	<=  v1*k1		- v2*k2);
+				IloRange R7(cos(theta1)*x[i] 	- cos(theta2)*x[j] 	<= -v1*cos(theta1) 	+ v2*cos(theta2));
+				IloRange R8(k1*x[i] 			- k2*x[j] 	<= -v1*k1 		+ v2*k2);
+				
+				IloOr myOR(env);
+				myOR.add(R1 && R2);
+				myOR.add(R3 && R4);
+				myOR.add(R5 && R6);
+				myOR.add(R7 && R8);
+				
+				model.add(myOR);
 			}
 		}
 	}
-
-	model.add(c);			//adding constraints to the model
 
 }  // END populatebyrow
 
@@ -146,6 +131,7 @@ void optimizeme(IloModel model, IloNumVarArray var, IloRangeArray con, geometry_
     try {
 		
       	IloCplex cplex(model);				//create cplex object for solving the problem (Note: two steps combined)
+      	//cplex.setParam( IloCplex::Param::Emphasis::MIP,1);
       	cplex.exportModel("/home/hari/my_iliad/src/shadow_algorithm/src/lpex1.lp");		//write the extracted model to lplex1.lp file (optional)
 		cplex.setOut(env.getNullStream()); 	//discard the output from next step(solving) by dumping it to null stream rather than to the screen
 		
@@ -164,8 +150,8 @@ void optimizeme(IloModel model, IloNumVarArray var, IloRangeArray con, geometry_
 		cout<<"Solved as MIP?\t: " <<cplex.isMIP()<<endl;
 		cplex.getValues(vals, var);		//solution values for all variables will be stored to vals
 		env.out() << "Values        = " << vals << endl;
-		cplex.getSlacks(vals2, con);
-		env.out() << "Slacks        = " << vals2 << endl;
+		//cplex.getSlacks(vals2, con);
+		//env.out() << "Slacks        = " << vals2 << endl;
       
 		IloNum violation = cplex.getQuality(IloCplex::MaxPrimalInfeas);
 		cout << "max violation\t: " << violation << endl;
@@ -245,15 +231,11 @@ void spawn_my_turtles(ros::NodeHandle& nh,turtlesim::Spawn::Request req[], turtl
 	for (int j=0; j<NTURTLE; ++j) {
 		req[j].name="myturtle";
 		req[j].name += std::to_string(j+1);	//append UID to the end of "myturtle" eg: myturtle3
-		p=j*2*M_PI/NTURTLE;			//divide 360 equally into "NTURTLE parts
+		p=M_PI/12+j*2*M_PI/NTURTLE;	
+		//p=j*2*M_PI/NTURTLE;		//divide 360 equally into "NTURTLE parts
 		req[j].x=x+r*cos(p);
 		req[j].y=y+r*sin(p);
 		req[j].theta=M_PI+p;
-		//req[j].theta=req[j].theta * M_PI/180;
-		
-//		cout << "req[j].x : " << req[j].x <<endl;
-//		cout << "req[j].y : " << req[j].y <<endl;
-//		cout << "req[j].theta : " << req[j].theta <<endl;
 		
 		bool success=spawnTurtle.call(req[j],resp[j]);
 		if(success) { ROS_INFO_STREAM ("Spawned turtle\t:" << j ); }

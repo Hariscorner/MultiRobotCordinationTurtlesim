@@ -4,13 +4,16 @@
 #include <ilcplex/ilocplex.h>
 #include <chrono>	//for endl
 #include <math.h> 	//for hypot
+#include <cmath> 	//for abs
 #include "turtlesim/Pose.h"		
 #include <limits.h>
 #include "geometry_msgs/Twist.h"
 #include <boost/assign/list_of.hpp>
 
 using namespace std;
-#define NTURTLE 5
+#define NTURTLE 3
+#define TOLERANCE 5
+#define isNear(X, A) ( ((X > (A - TOLERANCE)) && ( X < (A + TOLERANCE))) )
 
 double constrainAngle(double x);
 void evalcoeffs(double h[NTURTLE][NTURTLE], double k[NTURTLE][NTURTLE],  turtlesim::Pose TPose[]);
@@ -88,7 +91,7 @@ static void populatebyrow (IloModel model, IloNumVarArray x, IloRangeArray c, tu
 		x.add(IloNumVar(env, min_vel-Vinit[m], max_vel-Vinit[m], ILOFLOAT));	//qi
 	}
 	
-	model.add(IloMinimize(env, - x[0] - x[1] - x[2] - x[3] - x[4]));		//objective function for minimisation (Note: done in single step instead of two) 
+	model.add(IloMinimize(env, - x[0] - x[1] - x[2] ));		//objective function for minimisation (Note: done in single step instead of two) 
 	
 	double theta1, theta2, h1, h2, k1, k2, v1, v2;
 	for(int i=0; i<NTURTLE; ++i) {
@@ -130,6 +133,7 @@ void optimizeme(IloModel model, IloNumVarArray var, IloRangeArray con, geometry_
     try {
 		
       	IloCplex cplex(model);				//create cplex object for solving the problem (Note: two steps combined)
+      	//cplex.setParam( IloCplex::Param::Emphasis::MIP,1);
       	cplex.exportModel("/home/hari/my_iliad/src/shadow_algorithm/src/lpex1.lp");		//write the extracted model to lplex1.lp file (optional)
 		cplex.setOut(env.getNullStream()); 	//discard the output from next step(solving) by dumping it to null stream rather than to the screen
 		
@@ -191,33 +195,70 @@ void evalcoeffs(double h[NTURTLE][NTURTLE], double k[NTURTLE][NTURTLE], turtlesi
 					sleep(1500);
 					exit (0);
 				}
-			/*}
-			else if (i > j) {
-			  A[i][j] = A[j][i];
-			  w[i][j] = w[j][i];
-			}
-			if (i!=j) {*/
 				alpha=asin(safe_dia/A[i][j]);
 				l[i][j]=constrainAngle(w[i][j]+alpha);	//convert to the range [-180,180) if it goes out of bound
 				r[i][j]=constrainAngle(w[i][j]-alpha);
 				cout << "alpha\t: " << alpha*180/M_PI <<"\tw["<<i<<"]["<<j<<"]\t: " << w[i][j]*180/M_PI << "\tl[i][j]\t: " << l[i][j]*180/M_PI << "\tr[i][j]\t: " << r[i][j]*180/M_PI << endl;
 
+				if(isNear(l[i][j], 90*M_PI/180)){
+				  double del_angle=TOLERANCE -abs(90-l[i][j]);
+				  del_angle=((l[i][j] > 90*M_PI) ? del_angle : -del_angle);
+				  rotate_world(TPose, del_angle);
+				  memset(h, 0, sizeof(h));	//set arrays to zero
+				  memset(k, 0, sizeof(k));
+				  evalcoeffs(h,k,TPose);
+				}
+				else if (isNear(r[i][j], 90*M_PI/180)){
+				  double del_angle=TOLERANCE -abs(90-r[i][j]);
+				  del_angle=((r[i][j] > 90*M_PI) ? del_angle : -del_angle);
+				  rotate_world(TPose, del_angle);
+				  memset(h, 0, sizeof(h));	//set arrays to zero
+				  memset(k, 0, sizeof(k));
+				  evalcoeffs(h,k,TPose);
+				}
+				else if(isNear(l[i][j], -90*M_PI/180)){
+				  double del_angle=TOLERANCE -abs(-90-l[i][j]);
+				  del_angle=((l[i][j] > -90*M_PI) ? del_angle : -del_angle);
+				  rotate_world(TPose, del_angle);
+				  memset(h, 0, sizeof(h));	//set arrays to zero
+				  memset(k, 0, sizeof(k));
+				  evalcoeffs(h,k,TPose);
+				}  
+				else if (isNear(r[i][j], -90*M_PI/180)){
+				  double del_angle=TOLERANCE -abs(-90-r[i][j]);
+				  del_angle=((r[i][j] > -90*M_PI) ? del_angle : -del_angle);
+				  rotate_world(TPose, del_angle);
+				  memset(h, 0, sizeof(h));	//set arrays to zero
+				  memset(k, 0, sizeof(k));
+				  evalcoeffs(h,k,TPose);
+				}
+				else  { 
+				  //v1=T1Pose.linear_velocity;
+				  //v2=T2Pose.linear_velocity;
 
-				//v1=T1Pose.linear_velocity;
-				//v2=T2Pose.linear_velocity;
+				  cout << "tan(l[i][j])\t: " << tan(l[i][j]) << "\ttan(r[i][j])\t: " << tan(r[i][j]) << endl;
 
-				cout << "tan(l[i][j])\t: " << tan(l[i][j]) << "\ttan(r[i][j])\t: " << tan(r[i][j]) << endl;
+				  h[i][j]=tan(l[i][j])*cos(TPose[i].theta) - sin(TPose[i].theta);
+				  k[i][j]=tan(r[i][j])*cos(TPose[i].theta) - sin(TPose[i].theta);
 
-				h[i][j]=tan(l[i][j])*cos(TPose[i].theta) - sin(TPose[i].theta);
-				k[i][j]=tan(r[i][j])*cos(TPose[i].theta) - sin(TPose[i].theta);
-
-				cout << "h[i][j]\t: " << h[i][j] << "\tk[i][j]\t: " << k[i][j] << endl;
+				  cout << "h[i][j]\t: " << h[i][j] << "\tk[i][j]\t: " << k[i][j] << endl;
+				}
 			}
 		}
 	}
 
 }
 
+void rotate_world(turtlesim::Pose TPose[], double del_angle) {
+  double tempx, tempy;
+  for(int j=0; j< NTURTLE; ++j) {
+    tempx		= TPose[j].x * cos(del_angle) + TPose[j].y * sin(del_angle);
+    tempy		=-TPose[j].x * sin(del_angle) + TPose[j].y * cos(del_angle);
+    TPose[j].x		= tempx;
+    TPose[j].y		= tempy;
+    TPose[j].theta	= constrainAngle(TPose[j].theta + del_angle);
+  }
+}
 
 void spawn_my_turtles(ros::NodeHandle& nh,turtlesim::Spawn::Request req[], turtlesim::Spawn::Response resp[]) {
 	//spawn two turtles
