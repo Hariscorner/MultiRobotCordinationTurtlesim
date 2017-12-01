@@ -11,11 +11,16 @@
 #include <boost/assign/list_of.hpp>
 
 using namespace std;
-#define NTURTLE 3
-#define TOLERANCE 5
+#define NTURTLE 5
+#define OFFSET 9*M_PI/180
+#define TOLERANCE 0*M_PI/180
+// #define NTURTLE 7
+// #define OFFSET 9*M_PI/180
+// #define TOLERANCE 0*M_PI/180
 #define isNear(X, A) ( ((X > (A - TOLERANCE)) && ( X < (A + TOLERANCE))) )
 
 double constrainAngle(double x);
+void rotate_world(turtlesim::Pose TPose[], double del_angle);
 void evalcoeffs(double h[NTURTLE][NTURTLE], double k[NTURTLE][NTURTLE],  turtlesim::Pose TPose[]);
 void spawn_my_turtles(ros::NodeHandle& nh, turtlesim::Spawn::Request req[], turtlesim::Spawn::Response resp[]);
 void currPoseCallback(const turtlesim::Pose::ConstPtr& msg, int id, turtlesim::Pose TPose[]);
@@ -62,6 +67,10 @@ int main(int argc, char **argv) {
 	
 	evalcoeffs(h,k,TPose);				//calculates the coefficients of the constraint eqns etc
 	populatebyrow (model, var, con, TPose,h,k, max_vel,min_vel,Vinit );	//populate the model
+	cout<<"Pose before optimisation\n";
+	cout<<"TPose.x\t= " << TPose[0].x;
+	cout<<"\tTPose.y\t= " << TPose[0].y;
+	cout<<"\tTPose.theta\t=" << TPose[0].theta*180/M_PI<<endl;
 	optimizeme(model,var,con, cmdVel, Vinit);	//the real optimisation happens here
 	
 	//cout<<"going to Publish now: \t"<<cmdVel.linear.x<<endl; 
@@ -85,14 +94,19 @@ int main(int argc, char **argv) {
 static void populatebyrow (IloModel model, IloNumVarArray x, IloRangeArray c, turtlesim::Pose TPose[], double h[NTURTLE][NTURTLE], double k[NTURTLE][NTURTLE], double max_vel, double min_vel, double Vinit[])
 {
 	IloEnv env = model.getEnv();		//environment handle
-	
+
 	for(int m=0; m<NTURTLE; ++m) {
 		//define upper and lower bounds for variables and the variable type (continous(float) or discrete (int/bool)
 		x.add(IloNumVar(env, min_vel-Vinit[m], max_vel-Vinit[m], ILOFLOAT));	//qi
 	}
 	
-	model.add(IloMinimize(env, - x[0] - x[1] - x[2] ));		//objective function for minimisation (Note: done in single step instead of two) 
-	
+	IloExpr expr(env);
+	for(int j=0; j<NTURTLE; ++j) {
+	  expr += - x[j] ;
+	}
+	model.add(IloMinimize(env,expr));
+	//model.add(IloMinimize(env, - x[0] - x[1] - x[2] ));		//objective function for minimisation (Note: done in single step instead of two) 
+
 	double theta1, theta2, h1, h2, k1, k2, v1, v2;
 	for(int i=0; i<NTURTLE; ++i) {
 		for(int j=0; j<NTURTLE; ++j) {
@@ -133,7 +147,10 @@ void optimizeme(IloModel model, IloNumVarArray var, IloRangeArray con, geometry_
     try {
 		
       	IloCplex cplex(model);				//create cplex object for solving the problem (Note: two steps combined)
-      	//cplex.setParam( IloCplex::Param::Emphasis::MIP,1);
+      	cplex.setParam( IloCplex::Param::Emphasis::MIP,1);
+	cplex.setParam( IloCplex::Param::MIP::Tolerances::Integrality, 0);
+	//cplex.setParam( IloCplex::Param::Simplex::Tolerances::Feasibility, 1e-9);
+	cplex.setParam( IloCplex::Param::Barrier::ConvergeTol, 1e-12);
       	cplex.exportModel("/home/hari/my_iliad/src/shadow_algorithm/src/lpex1.lp");		//write the extracted model to lplex1.lp file (optional)
 		cplex.setOut(env.getNullStream()); 	//discard the output from next step(solving) by dumping it to null stream rather than to the screen
 		
@@ -199,38 +216,66 @@ void evalcoeffs(double h[NTURTLE][NTURTLE], double k[NTURTLE][NTURTLE], turtlesi
 				l[i][j]=constrainAngle(w[i][j]+alpha);	//convert to the range [-180,180) if it goes out of bound
 				r[i][j]=constrainAngle(w[i][j]-alpha);
 				cout << "alpha\t: " << alpha*180/M_PI <<"\tw["<<i<<"]["<<j<<"]\t: " << w[i][j]*180/M_PI << "\tl[i][j]\t: " << l[i][j]*180/M_PI << "\tr[i][j]\t: " << r[i][j]*180/M_PI << endl;
-
-				if(isNear(l[i][j], 90*M_PI/180)){
-				  double del_angle=TOLERANCE -abs(90-l[i][j]);
-				  del_angle=((l[i][j] > 90*M_PI) ? del_angle : -del_angle);
+				
+				if(isNear(w[i][j], M_PI/2)){
+				  cout<<"if 1"<<endl;
+				  double del_angle=TOLERANCE -abs(M_PI/2-w[i][j]);
+				  del_angle=((w[i][j] > M_PI/2) ? del_angle : -del_angle);
 				  rotate_world(TPose, del_angle);
-				  memset(h, 0, sizeof(h));	//set arrays to zero
-				  memset(k, 0, sizeof(k));
+				  memset(h, 0, NTURTLE*NTURTLE);	//set arrays to zero
+				  memset(k, 0, NTURTLE*NTURTLE);
 				  evalcoeffs(h,k,TPose);
+				  return;
 				}
-				else if (isNear(r[i][j], 90*M_PI/180)){
-				  double del_angle=TOLERANCE -abs(90-r[i][j]);
-				  del_angle=((r[i][j] > 90*M_PI) ? del_angle : -del_angle);
+				else if(isNear(l[i][j], M_PI/2)){
+				  cout<<"if 2"<<endl;
+				  double del_angle=TOLERANCE -abs(M_PI/2-l[i][j]);
+				  del_angle=((l[i][j] > M_PI/2) ? del_angle : -del_angle);
 				  rotate_world(TPose, del_angle);
-				  memset(h, 0, sizeof(h));	//set arrays to zero
-				  memset(k, 0, sizeof(k));
+				  memset(h, 0, NTURTLE*NTURTLE);	//set arrays to zero
+				  memset(k, 0, NTURTLE*NTURTLE);
 				  evalcoeffs(h,k,TPose);
+				  return;
 				}
-				else if(isNear(l[i][j], -90*M_PI/180)){
-				  double del_angle=TOLERANCE -abs(-90-l[i][j]);
-				  del_angle=((l[i][j] > -90*M_PI) ? del_angle : -del_angle);
+				else if (isNear(r[i][j], M_PI/2)){
+				  cout<<"if 3"<<endl;
+				  double del_angle=TOLERANCE -abs(M_PI/2-r[i][j]);
+				  del_angle=((r[i][j] > M_PI/2) ? del_angle : -del_angle);
 				  rotate_world(TPose, del_angle);
-				  memset(h, 0, sizeof(h));	//set arrays to zero
-				  memset(k, 0, sizeof(k));
+				  memset(h, 0, NTURTLE*NTURTLE);	//set arrays to zero
+				  memset(k, 0, NTURTLE*NTURTLE);
 				  evalcoeffs(h,k,TPose);
+				  return;
+				}
+				else if(isNear(w[i][j], -M_PI/2)){
+				  cout<<"if 4"<<endl;
+				  double del_angle=TOLERANCE -abs(-M_PI/2-w[i][j]);
+				  del_angle=((w[i][j] > -M_PI/2) ? del_angle : -del_angle);
+				  rotate_world(TPose, del_angle);
+				  memset(h, 0, NTURTLE*NTURTLE);	//set arrays to zero
+				  memset(k, 0, NTURTLE*NTURTLE);
+				  evalcoeffs(h,k,TPose);
+				  return;
 				}  
-				else if (isNear(r[i][j], -90*M_PI/180)){
-				  double del_angle=TOLERANCE -abs(-90-r[i][j]);
-				  del_angle=((r[i][j] > -90*M_PI) ? del_angle : -del_angle);
+				else if(isNear(l[i][j], -M_PI/2)){
+				  cout<<"if 5"<<endl;
+				  double del_angle=TOLERANCE -abs(-M_PI/2-l[i][j]);
+				  del_angle=((l[i][j] > -M_PI/2) ? del_angle : -del_angle);
 				  rotate_world(TPose, del_angle);
-				  memset(h, 0, sizeof(h));	//set arrays to zero
-				  memset(k, 0, sizeof(k));
+				  memset(h, 0, NTURTLE*NTURTLE);	//set arrays to zero
+				  memset(k, 0, NTURTLE*NTURTLE);
 				  evalcoeffs(h,k,TPose);
+				  return;
+				}  
+				else if (isNear(r[i][j], -M_PI/2)){
+				  cout<<"if 6"<<endl;
+				  double del_angle=TOLERANCE -abs(-M_PI/2-r[i][j]);
+				  del_angle=((r[i][j] > -M_PI/2) ? del_angle : -del_angle);
+				  rotate_world(TPose, del_angle);
+				  memset(h, 0, NTURTLE*NTURTLE);	//set arrays to zero
+				  memset(k, 0, NTURTLE*NTURTLE);
+				  evalcoeffs(h,k,TPose);
+				  return;
 				}
 				else  { 
 				  //v1=T1Pose.linear_velocity;
@@ -251,13 +296,20 @@ void evalcoeffs(double h[NTURTLE][NTURTLE], double k[NTURTLE][NTURTLE], turtlesi
 
 void rotate_world(turtlesim::Pose TPose[], double del_angle) {
   double tempx, tempy;
+  del_angle=del_angle+0.01*del_angle;
+  cout << "TPose is updated to: " <<endl;
   for(int j=0; j< NTURTLE; ++j) {
     tempx		= TPose[j].x * cos(del_angle) + TPose[j].y * sin(del_angle);
     tempy		=-TPose[j].x * sin(del_angle) + TPose[j].y * cos(del_angle);
     TPose[j].x		= tempx;
     TPose[j].y		= tempy;
-    TPose[j].theta	= constrainAngle(TPose[j].theta + del_angle);
+    TPose[j].theta	= constrainAngle(TPose[j].theta - del_angle);
+    	
+	cout<<"TPose.x\t= " << TPose[j].x;
+	cout<<"\tTPose.y\t= " << TPose[j].y;
+	cout<<"\tTPose.theta\t=" << TPose[j].theta*180/M_PI<<endl;
   }
+  //sleep(10);
 }
 
 void spawn_my_turtles(ros::NodeHandle& nh,turtlesim::Spawn::Request req[], turtlesim::Spawn::Response resp[]) {
@@ -270,7 +322,7 @@ void spawn_my_turtles(ros::NodeHandle& nh,turtlesim::Spawn::Request req[], turtl
 	for (int j=0; j<NTURTLE; ++j) {
 		req[j].name="myturtle";
 		req[j].name += std::to_string(j+1);	//append UID to the end of "myturtle" eg: myturtle3
-		p=M_PI/12+j*2*M_PI/NTURTLE;	
+		p=OFFSET+j*2*M_PI/NTURTLE;	
 		//p=j*2*M_PI/NTURTLE;		//divide 360 equally into "NTURTLE parts
 		req[j].x=x+r*cos(p);
 		req[j].y=y+r*sin(p);
@@ -286,10 +338,9 @@ void currPoseCallback(const turtlesim::Pose::ConstPtr& msg, int id, turtlesim::P
 	TPose[id].x 		= msg->x;
 	TPose[id].y 		= msg->y;
 	TPose[id].theta 	= constrainAngle(msg->theta);
-	//cout << "Turtle Identifier: " << id <<endl;
-	//cout<<"TPose.x" << TPose[id].x<<endl;
-	//cout<<"TPose.y" << TPose[id].y<<endl;
-	//cout<<"TPose.theta" << TPose[id].theta<<endl;
+// 	cout<<"TPose.x\t= " << TPose[id].x;
+// 	cout<<"\tTPose.y\t= " << TPose[id].y;
+// 	cout<<"\tTPose.theta\t=" << TPose[id].theta*180/M_PI<<endl;
 	return;
 }
 
